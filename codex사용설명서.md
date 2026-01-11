@@ -46,3 +46,21 @@ C:\Users\taeuk\Desktop\code\roblox-ts\toy_1\docs\banana_table.md
 유저 UI 우측 상단  가로:세로 비율이 1.58:1 이고, 모서리가둥근 네모의 버튼을 만들어줘
 
 여기 프로젝트의 타입스립트를 전부 탐색해서 현재까지 개발된 내용을 정리해서 코드블록으로 출력해줘
+
+TODO: 
+1. 
+InventoryButton 의 내부 세 개의 바나나슬롯 중
+활성화 된 것들 중에서
+유저가 클릭을 했을 때
+유저의 playerInventories 에 있는 바나인 경우
+playerInventories 에 대한 바나나의 수량 -1 , 이건 데이터스토어에도 적용되도록
+
+2. 
+InventoryButton 의 내부 트리거 슬롯이 클래식 바나나를 1개 소모하도록 
+
+3. 본인 점수를 UI에서 확인할 수 있도록
+
+4.  한쪽에는 서버 전체의 랭킹을 확인할 수 있도록
+
+5. 바나나 거래 마켓
+
