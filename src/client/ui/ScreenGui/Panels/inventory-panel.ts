@@ -1,4 +1,7 @@
 import type { InventorySnapshotItem } from "shared/inventory-types";
+import { createBaseButton } from "../../components/buttons";
+import { bindStandardActivation } from "../../components/buttons/activations";
+import { INVENTORY_PANEL_CLOSE_BUTTON_CONFIG } from "../button-config";
 
 const PANELS_FOLDER_NAME = "Panels";
 const PANEL_NAME = "InventoryPanel";
@@ -53,21 +56,6 @@ const getOrCreateScrollingFrame = (parent: Instance, name: string) => {
   frame.Name = name;
   frame.Parent = parent;
   return frame;
-};
-
-const getOrCreateTextButton = (parent: Instance, name: string) => {
-  const existing = parent.FindFirstChild(name);
-  if (existing && existing.IsA("TextButton")) {
-    return existing;
-  }
-  if (existing) {
-    existing.Destroy();
-  }
-
-  const button = new Instance("TextButton");
-  button.Name = name;
-  button.Parent = parent;
-  return button;
 };
 
 const ensureAspect = (parent: GuiObject, ratio: number) => {
@@ -146,18 +134,38 @@ export const mountInventoryPanel = (gui: ScreenGui) => {
   ensureCorner(panel);
   ensureStroke(panel, 3, PANEL_STROKE_COLOR, 0.2);
 
-  const closeButton = getOrCreateTextButton(panel, "CloseButton");
-  closeButton.AnchorPoint = new Vector2(1, 0);
-  closeButton.Position = new UDim2(1, -12, 0, 12);
-  closeButton.Size = new UDim2(0, 28, 0, 28);
-  closeButton.BackgroundColor3 = Color3.fromRGB(140, 140, 140);
-  closeButton.BorderSizePixel = 0;
-  closeButton.Text = "X";
-  closeButton.TextColor3 = Color3.fromRGB(255, 255, 255);
-  closeButton.TextScaled = true;
-  closeButton.AutoButtonColor = false;
-  ensureCorner(closeButton);
-  ensureStroke(closeButton, 2, Color3.fromRGB(255, 255, 255), 0.2);
+  const closeConfig = INVENTORY_PANEL_CLOSE_BUTTON_CONFIG;
+  const existingClose = panel.FindFirstChild(closeConfig.name);
+  if (existingClose) {
+    existingClose.Destroy();
+  }
+
+  const closeController = createBaseButton({
+    name: closeConfig.name,
+    parent: panel,
+    visible: closeConfig.visible,
+    size: closeConfig.size,
+    position: closeConfig.position,
+    anchorPoint: closeConfig.anchorPoint,
+    palette: closeConfig.palette,
+    stroke: closeConfig.stroke,
+    cornerRadius: closeConfig.cornerRadius,
+    cooldownSeconds: closeConfig.cooldownSeconds,
+  });
+
+  const closeLabel = new Instance("TextLabel");
+  closeLabel.Name = "Label";
+  closeLabel.Size = new UDim2(1, 0, 1, 0);
+  closeLabel.BackgroundTransparency = 1;
+  closeLabel.Text = closeConfig.label.text;
+  closeLabel.TextColor3 = closeConfig.label.color;
+  closeLabel.TextScaled = true;
+  closeLabel.ZIndex = closeController.getChildZIndex();
+  closeLabel.Parent = closeController.button;
+
+  closeController.onStateChange((state) => {
+    closeLabel.TextTransparency = state === "Disabled" ? 0.4 : 0;
+  });
 
   const gridFrame = getOrCreateScrollingFrame(panel, "InventoryGrid");
   gridFrame.Position = new UDim2(0, 16, 0, 56);
@@ -185,9 +193,9 @@ export const mountInventoryPanel = (gui: ScreenGui) => {
   padding.PaddingBottom = new UDim(0, 6);
   padding.Parent = gridFrame;
 
-  closeButton.Activated.Connect(() => {
+  bindStandardActivation(closeController, () => {
     panel.Visible = false;
-  });
+  }, { pressStrength: "weak" });
 
   const itemFrames = new Map<string, Frame>();
   const itemCounts = new Map<string, number>();

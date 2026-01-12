@@ -1,5 +1,5 @@
-export type PlayerScoreState = {
-  score: number;
+export type PlayerMoneyState = {
+  bananaMoney: number;
   loaded: boolean;
   dirty: boolean;
   saving: boolean;
@@ -8,4 +8,4 @@ export type PlayerScoreState = {
   failedSaves: number;
 };
 
-export const playerScores = new Map<number, PlayerScoreState>();
+export const playerMoneyStates = new Map<number, PlayerMoneyState>();

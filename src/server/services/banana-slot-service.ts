@@ -8,8 +8,7 @@ import type {
   BananaSlotsResponse,
 } from "shared/banana-slots";
 import { BANANA_SLOT_CLICK_REMOTE, BANANA_SLOTS_REMOTE } from "shared/remotes";
-import { playerInventories } from "../state/player-inventory-state";
-import { addBananaScore } from "./player/datastore/score-service";
+import { addBananaMoney, hasBanana } from "./datastore/data-service";
 
 const SLOT_COUNT = 3;
 const CLICK_COOLDOWN_SECONDS = 1;
@@ -29,7 +28,7 @@ const pickRandomSlot = (index: number): BananaSlot => {
     index,
     id: entry.id,
     name: entry.name,
-    score: entry.score,
+    bananaMoney: entry.bananaMoney,
   };
 };
 
@@ -86,15 +85,6 @@ const getOrCreateSlotClickRemote = () => {
   return remote;
 };
 
-const hasBanana = (player: Player, bananaId: string) => {
-  const state = playerInventories.get(player.UserId);
-  if (!state || !state.loaded) {
-    return false;
-  }
-  const item = state.data.items[bananaId];
-  return item !== undefined && item.qty > 0;
-};
-
 export const initBananaSlotService = () => {
   const slotsRemote = getOrCreateSlotsRemote();
   slotsRemote.OnServerInvoke = (player, ...args: unknown[]) => {
@@ -146,11 +136,11 @@ export const initBananaSlotService = () => {
     }
 
     state.lastClickAt = now;
-    const newScore = addBananaScore(player, slot.score);
+    const newBananaMoney = addBananaMoney(player, slot.bananaMoney);
     const response: BananaSlotClickResponse = {
       awarded: true,
-      scoreDelta: slot.score,
-      totalScore: newScore,
+      bananaMoneyDelta: slot.bananaMoney,
+      totalBananaMoney: newBananaMoney,
     };
     return response;
   };

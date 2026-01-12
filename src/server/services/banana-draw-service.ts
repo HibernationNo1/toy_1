@@ -3,7 +3,7 @@ import { BANANA_TABLE } from "shared/banana-table";
 import { PULL_BANANA_REMOTE } from "shared/remotes";
 import { logInfo } from "../logger";
 import { sendExternalLog } from "./external/log-service";
-import { recordBananaPull } from "./player/datastore/inventory-service";
+import { recordBananaPull } from "./datastore/data-service";
 
 const pickWeightedBanana = () => {
   let totalWeight = 0;
@@ -48,14 +48,14 @@ export const initBananaDrawService = () => {
   remote.OnServerEvent.Connect((player) => {
     const entry = pickWeightedBanana();
     recordBananaPull(player, entry);
-    logInfo(`Pull banana: ${player.Name} -> ${entry.name} (${entry.score})`);
+    logInfo(`Pull banana: ${player.Name} -> ${entry.name} (${entry.bananaMoney})`);
     sendExternalLog({
       event: "pull_banana",
       userId: player.UserId,
       userName: player.Name,
       bananaId: entry.id,
       bananaName: entry.name,
-      score: entry.score,
+      bananaMoney: entry.bananaMoney,
     });
     remote.FireClient(player, entry);
   });

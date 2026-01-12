@@ -1,4 +1,4 @@
-import { Players, ReplicatedStorage, TweenService } from "@rbxts/services";
+import { Players, ReplicatedStorage } from "@rbxts/services";
 import type { BananaEntry } from "shared/banana-table";
 import type {
   BananaSlot,
@@ -14,6 +14,14 @@ import {
   INVENTORY_SNAPSHOT_REMOTE,
   PULL_BANANA_REMOTE,
 } from "shared/remotes";
+import { createBaseButton } from "../../components/buttons";
+import { bindStandardActivation } from "../../components/buttons/activations";
+import { createSlotItem, type SlotItemController } from "../../components/slots";
+import {
+  BANANA_SUBMIT_LAYOUT,
+  BANANA_SUBMIT_REROLL_BUTTON_CONFIG,
+  BANANA_SUBMIT_SLOT_CONFIG,
+} from "../banana-submit-config";
 
 const GUI_NAME = "ScreenGui";
 const PANELS_FOLDER_NAME = "Panels";
@@ -23,24 +31,12 @@ const PANEL_WIDTH_SCALE = 0.5;
 const PANEL_HEIGHT_SCALE = PANEL_WIDTH_SCALE / PANEL_ASPECT_RATIO;
 const PANEL_BACKGROUND_COLOR = Color3.fromRGB(189, 189, 189);
 const PANEL_STROKE_COLOR = Color3.fromRGB(66, 66, 66);
-const SLOT_ACTIVE_COLOR = Color3.fromRGB(217, 217, 217);
-const SLOT_INACTIVE_COLOR = Color3.fromRGB(69, 69, 69);
-const SLOT_FLASH_COLOR = Color3.fromRGB(212, 182, 182);
-const SLOT_OWNED_FLASH_COLOR = Color3.fromRGB(168, 205, 227);
-const SLOT_OWNED_BORDER_COLOR = Color3.fromRGB(217, 213, 184);
-const SLOT_UNOWNED_BORDER_COLOR = Color3.fromRGB(209, 177, 163);
-const SLOT_STROKE_THICKNESS = 3;
-const SLOT_COUNT = 3;
-const REROLL_SLOT_NAME = "RerollSlot";
-const REROLL_SLOT_SCALE = 0.8;
-const REROLL_SLOT_COLOR = Color3.fromRGB(200, 200, 200);
-const REROLL_SLOT_STROKE_COLOR = Color3.fromRGB(140, 140, 140);
+
 const slotActiveFlags = new Map<number, boolean>();
 const ownedBananaIds = new Set<string>();
 
 type SlotInfo = {
-  slot: TextButton;
-  label: TextLabel;
+  slot: SlotItemController;
   index: number;
 };
 
@@ -91,36 +87,6 @@ const getOrCreateFrame = (parent: Instance, name: string) => {
   frame.Name = name;
   frame.Parent = parent;
   return frame;
-};
-
-const getOrCreateTextButton = (parent: Instance, name: string) => {
-  const existing = parent.FindFirstChild(name);
-  if (existing && existing.IsA("TextButton")) {
-    return existing;
-  }
-  if (existing) {
-    existing.Destroy();
-  }
-
-  const button = new Instance("TextButton");
-  button.Name = name;
-  button.Parent = parent;
-  return button;
-};
-
-const getOrCreateTextLabel = (parent: Instance, name: string) => {
-  const existing = parent.FindFirstChild(name);
-  if (existing && existing.IsA("TextLabel")) {
-    return existing;
-  }
-  if (existing) {
-    existing.Destroy();
-  }
-
-  const label = new Instance("TextLabel");
-  label.Name = name;
-  label.Parent = parent;
-  return label;
 };
 
 const getSnapshotRemote = () => {
@@ -195,17 +161,6 @@ const ensureStroke = (parent: GuiObject, thickness: number, color: Color3, trans
   return stroke;
 };
 
-const ensureScale = (parent: GuiObject) => {
-  const existing = parent.FindFirstChildOfClass("UIScale");
-  if (existing) {
-    return existing;
-  }
-
-  const scale = new Instance("UIScale");
-  scale.Parent = parent;
-  return scale;
-};
-
 const getSlotActive = (index: number) => {
   const existing = slotActiveFlags.get(index);
   if (existing !== undefined) {
@@ -219,7 +174,7 @@ const applyActiveSlots = (activeSlots?: boolean[]) => {
   if (!activeSlots) {
     return;
   }
-  for (let i = 1; i <= SLOT_COUNT; i += 1) {
+  for (let i = 1; i <= BANANA_SUBMIT_SLOT_CONFIG.count; i += 1) {
     const value = activeSlots[i - 1];
     if (value !== undefined) {
       slotActiveFlags.set(i, value);
@@ -227,26 +182,24 @@ const applyActiveSlots = (activeSlots?: boolean[]) => {
   }
 };
 
-const applySlotOwnership = (slot: TextButton, index: number) => {
-  const stroke = ensureStroke(slot, SLOT_STROKE_THICKNESS, PANEL_STROKE_COLOR, 0.2);
-  stroke.Thickness = SLOT_STROKE_THICKNESS;
-
+const applySlotOwnership = (slot: SlotItemController, index: number) => {
   if (!getSlotActive(index)) {
-    stroke.Color = PANEL_STROKE_COLOR;
+    slot.setBorderColor(BANANA_SUBMIT_SLOT_CONFIG.borderColors.inactive);
     return;
   }
 
-  const bananaId = slot.GetAttribute("BananaId");
-  const owned = typeIs(bananaId, "string") && ownedBananaIds.has(bananaId);
-  stroke.Color = owned ? SLOT_OWNED_BORDER_COLOR : SLOT_UNOWNED_BORDER_COLOR;
+  const bananaId = slot.getData().id;
+  const owned = typeIs(bananaId, "string") && bananaId.size() > 0 && ownedBananaIds.has(bananaId);
+  slot.setBorderColor(
+    owned ? BANANA_SUBMIT_SLOT_CONFIG.borderColors.owned : BANANA_SUBMIT_SLOT_CONFIG.borderColors.unowned
+  );
 };
 
-const applySlotState = (slot: TextButton, index: number) => {
+const applySlotState = (slot: SlotItemController, index: number) => {
   const isActive = getSlotActive(index);
-  slot.Active = isActive;
-  slot.AutoButtonColor = false;
-  slot.BackgroundColor3 = isActive ? SLOT_ACTIVE_COLOR : SLOT_INACTIVE_COLOR;
-  slot.SetAttribute("Active", isActive);
+  slot.setLocked(!isActive);
+  slot.setClickable(isActive, "disable");
+  slot.slot.SetAttribute("Active", isActive);
   return isActive;
 };
 
@@ -260,13 +213,11 @@ const applySlots = (slots: BananaSlot[]) => {
   for (const slotInfo of slotInfos) {
     const slotData = slots.find((slot) => slot.index === slotInfo.index);
     if (!slotData) {
-      slotInfo.slot.SetAttribute("BananaId", "");
-      slotInfo.label.Text = "";
+      slotInfo.slot.setItem({ id: "", name: "" });
       applySlotOwnership(slotInfo.slot, slotInfo.index);
       continue;
     }
-    slotInfo.slot.SetAttribute("BananaId", slotData.id);
-    slotInfo.label.Text = slotData.name;
+    slotInfo.slot.setItem({ id: slotData.id, name: slotData.name });
     applySlotOwnership(slotInfo.slot, slotInfo.index);
   }
 };
@@ -280,14 +231,8 @@ const syncOwnedBananas = (items: InventorySnapshotResponse["items"]) => {
   }
 };
 
-const applySlotLayout = (
-  panel: Frame,
-  slotsFrame: Frame,
-  layout: UIGridLayout,
-  rerollSlot: TextButton
-) => {
-  const padding = 6;
-  const spacing = 4;
+const applySlotLayout = (panel: Frame, slotsFrame: Frame, layout: UIGridLayout, rerollButton: GuiObject) => {
+  const { padding, spacing, rerollScale } = BANANA_SUBMIT_LAYOUT;
   const panelSize = panel.AbsoluteSize;
   const availableWidth = panelSize.X - padding * 2;
   const availableHeight = panelSize.Y - padding * 2;
@@ -295,13 +240,14 @@ const applySlotLayout = (
     return;
   }
 
-  const slotSizeByWidth = (availableWidth - spacing * 3) / (SLOT_COUNT + REROLL_SLOT_SCALE);
+  const slotCount = BANANA_SUBMIT_SLOT_CONFIG.count;
+  const slotSizeByWidth = (availableWidth - spacing * slotCount) / (slotCount + rerollScale);
   const slotSize = math.floor(math.min(slotSizeByWidth, availableHeight));
   if (slotSize <= 0) {
     return;
   }
-  const rerollSize = math.floor(slotSize * REROLL_SLOT_SCALE);
-  const slotsWidth = slotSize * SLOT_COUNT + spacing * (SLOT_COUNT - 1);
+  const rerollSize = math.floor(slotSize * rerollScale);
+  const slotsWidth = slotSize * slotCount + spacing * (slotCount - 1);
 
   slotsFrame.AnchorPoint = new Vector2(0, 0.5);
   slotsFrame.Position = new UDim2(0, padding, 0.5, 0);
@@ -310,40 +256,9 @@ const applySlotLayout = (
   layout.CellSize = new UDim2(0, slotSize, 0, slotSize);
   layout.CellPadding = new UDim2(0, spacing, 0, 0);
 
-  rerollSlot.AnchorPoint = new Vector2(1, 0.5);
-  rerollSlot.Position = new UDim2(1, -padding, 0.5, 0);
-  rerollSlot.Size = new UDim2(0, rerollSize, 0, rerollSize);
-};
-
-const playSlotClick = (slot: TextButton, baseColor: Color3, flashColor: Color3) => {
-  const scale = ensureScale(slot);
-  const down = TweenService.Create(
-    scale,
-    new TweenInfo(0.07, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-    { Scale: 0.95 }
-  );
-  const up = TweenService.Create(
-    scale,
-    new TweenInfo(0.09, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-    { Scale: 1 }
-  );
-  const flash = TweenService.Create(
-    slot,
-    new TweenInfo(0.07, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-    { BackgroundColor3: flashColor }
-  );
-  const unflash = TweenService.Create(
-    slot,
-    new TweenInfo(0.09, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-    { BackgroundColor3: baseColor }
-  );
-
-  down.Completed.Connect(() => {
-    up.Play();
-    unflash.Play();
-  });
-  flash.Play();
-  down.Play();
+  rerollButton.AnchorPoint = new Vector2(1, 0.5);
+  rerollButton.Position = new UDim2(1, -padding, 0.5, 0);
+  rerollButton.Size = new UDim2(0, rerollSize, 0, rerollSize);
 };
 
 const delaySeconds = (seconds: number, callback: () => void) => {
@@ -376,15 +291,25 @@ export const mountBananaSubmitPanel = (options?: BananaSubmitPanelOptions) => {
   slotsFrame.BackgroundTransparency = 1;
   slotsFrame.BorderSizePixel = 0;
 
-  const rerollSlot = getOrCreateTextButton(panel, REROLL_SLOT_NAME);
-  rerollSlot.BackgroundColor3 = REROLL_SLOT_COLOR;
-  rerollSlot.BorderSizePixel = 0;
-  rerollSlot.Text = "";
-  rerollSlot.TextTransparency = 1;
-  rerollSlot.Active = true;
-  rerollSlot.Modal = false;
-  rerollSlot.AutoButtonColor = false;
-  ensureStroke(rerollSlot, SLOT_STROKE_THICKNESS, REROLL_SLOT_STROKE_COLOR, 0.2);
+  const rerollConfig = BANANA_SUBMIT_REROLL_BUTTON_CONFIG;
+  const existingReroll = panel.FindFirstChild(rerollConfig.name);
+  if (existingReroll) {
+    existingReroll.Destroy();
+  }
+
+  const rerollController = createBaseButton({
+    name: rerollConfig.name,
+    parent: panel,
+    visible: rerollConfig.visible,
+    size: new UDim2(0, 0, 0, 0),
+    position: new UDim2(0, 0, 0, 0),
+    anchorPoint: new Vector2(1, 0.5),
+    layer: "panel",
+    palette: rerollConfig.palette,
+    stroke: rerollConfig.stroke,
+    cornerRadius: rerollConfig.cornerRadius,
+  });
+  rerollController.button.Modal = false;
 
   const existingLayout = slotsFrame.FindFirstChildOfClass("UIGridLayout");
   const layout = existingLayout ?? new Instance("UIGridLayout");
@@ -393,61 +318,6 @@ export const mountBananaSubmitPanel = (options?: BananaSubmitPanelOptions) => {
   layout.VerticalAlignment = Enum.VerticalAlignment.Center;
   layout.SortOrder = Enum.SortOrder.LayoutOrder;
   layout.Parent = slotsFrame;
-
-  slotInfos = [];
-
-  for (let i = 1; i <= SLOT_COUNT; i += 1) {
-    const slot = getOrCreateTextButton(slotsFrame, `Slot${i}`);
-    slot.LayoutOrder = i;
-    slot.BorderSizePixel = 0;
-    slot.Text = "";
-    slot.TextTransparency = 1;
-    slot.Selectable = false;
-    applySlotState(slot, i);
-    ensureStroke(slot, SLOT_STROKE_THICKNESS, PANEL_STROKE_COLOR, 0.2);
-
-    const nameLabel = getOrCreateFrame(slot, "NameLabel");
-    nameLabel.BackgroundTransparency = 1;
-    nameLabel.BorderSizePixel = 0;
-    nameLabel.Size = new UDim2(1, -6, 1, -6);
-    nameLabel.Position = new UDim2(0, 3, 0, 3);
-
-    const text = getOrCreateTextLabel(nameLabel, "NameText");
-    text.BackgroundTransparency = 1;
-    text.Size = new UDim2(1, 0, 1, 0);
-    text.TextColor3 = Color3.fromRGB(40, 40, 40);
-    text.TextScaled = true;
-    text.TextWrapped = true;
-    const slotInfo: SlotInfo = { slot, label: text, index: i };
-    slotInfos.push(slotInfo);
-
-    slot.Activated.Connect(() => {
-      if (!getSlotActive(i)) {
-        return;
-      }
-      const bananaId = slot.GetAttribute("BananaId");
-      if (!typeIs(bananaId, "string") || bananaId.size() === 0) {
-        return;
-      }
-      const slotClickRemote = getSlotClickRemote();
-      const request: BananaSlotClickRequest = { slotIndex: i, slotId: bananaId };
-      const [ok, result] = pcall(() => slotClickRemote.InvokeServer(request));
-      if (!ok || !typeIs(result, "table")) {
-        return;
-      }
-      const response = result as BananaSlotClickResponse;
-      const awarded = response.awarded === true;
-      const baseColor = SLOT_ACTIVE_COLOR;
-      const flashColor = awarded ? SLOT_OWNED_FLASH_COLOR : SLOT_FLASH_COLOR;
-      playSlotClick(slot, baseColor, flashColor);
-      print(`${i}번째 슬롯 클릭`);
-      if (awarded) {
-        delaySeconds(0.5, () => {
-          fetchSlots({ reroll: true });
-        });
-      }
-    });
-  }
 
   const slotsRemote = getSlotsRemote();
   const fetchSlots = (request?: BananaSlotsRequest) => {
@@ -459,11 +329,76 @@ export const mountBananaSubmitPanel = (options?: BananaSubmitPanelOptions) => {
     applySlots(response.slots);
   };
 
-  rerollSlot.Activated.Connect(() => {
-    fetchSlots({ reroll: true });
-  });
+  slotInfos = [];
 
-  const refreshLayout = () => applySlotLayout(panel, slotsFrame, layout, rerollSlot);
+  for (let i = 1; i <= BANANA_SUBMIT_SLOT_CONFIG.count; i += 1) {
+    const slotName = `Slot${i}`;
+    const existingSlot = slotsFrame.FindFirstChild(slotName);
+    if (existingSlot) {
+      existingSlot.Destroy();
+    }
+
+    const slotController = createSlotItem({
+      name: slotName,
+      parent: slotsFrame,
+      visible: true,
+      position: new UDim2(0, 0, 0, 0),
+      size: new UDim2(0, 0, 0, 0),
+      anchorPoint: new Vector2(0.5, 0.5),
+      layer: "panel",
+      palette: BANANA_SUBMIT_SLOT_CONFIG.palette,
+      feedbackPalette: BANANA_SUBMIT_SLOT_CONFIG.feedbackPalette,
+      textStyle: BANANA_SUBMIT_SLOT_CONFIG.textStyle,
+      stroke: BANANA_SUBMIT_SLOT_CONFIG.stroke,
+      cornerRadius: BANANA_SUBMIT_SLOT_CONFIG.cornerRadius,
+      showRarityBar: BANANA_SUBMIT_SLOT_CONFIG.showRarityBar,
+      lockedOverlayTransparency: BANANA_SUBMIT_SLOT_CONFIG.lockedOverlayTransparency,
+      autoSuccessFeedback: false,
+    });
+    slotController.slot.LayoutOrder = i;
+    applySlotState(slotController, i);
+
+    const slotInfo: SlotInfo = { slot: slotController, index: i };
+    slotInfos.push(slotInfo);
+
+    slotController.onActivated(() => {
+      const bananaId = slotController.getData().id;
+      if (!typeIs(bananaId, "string") || bananaId.size() === 0) {
+        slotController.playFailureFeedback("weak");
+        return;
+      }
+      const slotClickRemote = getSlotClickRemote();
+      const request: BananaSlotClickRequest = { slotIndex: i, slotId: bananaId };
+      const [ok, result] = pcall(() => slotClickRemote.InvokeServer(request));
+      if (!ok || !typeIs(result, "table")) {
+        slotController.playFailureFeedback("weak");
+        return;
+      }
+      const response = result as BananaSlotClickResponse;
+      const awarded = response.awarded === true;
+      if (awarded) {
+        slotController.playSuccessFeedback();
+      } else {
+        slotController.playFailureFeedback("weak");
+      }
+      print(`${i}번째 슬롯 클릭`);
+      if (awarded) {
+        delaySeconds(0.5, () => {
+          fetchSlots({ reroll: true });
+        });
+      }
+    });
+  }
+
+  bindStandardActivation(
+    rerollController,
+    () => {
+      fetchSlots({ reroll: true });
+    },
+    { pressStrength: "weak" }
+  );
+
+  const refreshLayout = () => applySlotLayout(panel, slotsFrame, layout, rerollController.button);
   refreshLayout();
   panel.GetPropertyChangedSignal("AbsoluteSize").Connect(refreshLayout);
 
