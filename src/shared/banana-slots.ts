@@ -2,7 +2,7 @@ export type BananaSlot = {
   index: number;
   id: string;
   name: string;
-  score: number;
+  bananaMoney: number;
 };
 
 export type BananaSlotsRequest = {
@@ -20,7 +20,7 @@ export type BananaSlotClickRequest = {
 
 export type BananaSlotClickResponse = {
   awarded: boolean;
-  scoreDelta?: number;
-  totalScore?: number;
+  bananaMoneyDelta?: number;
+  totalBananaMoney?: number;
   reason?: string;
 };
